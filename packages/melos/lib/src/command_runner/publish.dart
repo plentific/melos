@@ -44,11 +44,11 @@ class PublishCommand extends MelosCommand {
   }
 
   @override
-  final String name = 'publish';
+  final String name = 'publishViaGit';
 
   @override
   final String description =
-      'Publish any unpublished packages or package versions in your repository to pub.dev. '
+      'Publish any unpublished packages or package versions in your repository to git repository. '
       'Dry run is on by default.';
 
   @override

@@ -16,7 +16,7 @@ mixin _PublishMixin on _ExecMixin {
     logger.stdout('   └> ${AnsiStyles.cyan.bold(workspace.path)}\n');
 
     final readRegistryProgress =
-        logger.progress('Reading pub registry for package information');
+        logger.progress('Reading local git for package information');
 
     Map<String, String?> latestPublishedVersionForPackages;
 
@@ -107,7 +107,7 @@ mixin _PublishMixin on _ExecMixin {
         (package) async {
       if (package.isPrivate) return;
 
-      final versions = await package.getPublishedVersions();
+      final versions = await package.getPublishedVersions(workspace.path);
 
       if (versions.isEmpty) {
         latestPackageVersion[package.name] = null;
@@ -139,26 +139,7 @@ mixin _PublishMixin on _ExecMixin {
     required bool gitTagVersion,
   }) async {
     final updateRegistryProgress = logger.progress(
-      'Publishing ${unpublishedPackages.length} packages to registry:',
-    );
-    final execArgs = [
-      if (isPubSubcommand()) 'dart',
-      'pub',
-      'publish',
-    ];
-
-    if (dryRun) {
-      execArgs.add('--dry-run');
-    } else {
-      execArgs.add('--force');
-    }
-
-    await _execForAllPackages(
-      workspace,
-      unpublishedPackages,
-      execArgs,
-      concurrency: 1,
-      failFast: true,
+      'Publishing ${unpublishedPackages.length} packages to git only:',
     );
 
     if (exitCode != 1) {

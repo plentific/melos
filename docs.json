@@ -23,7 +23,7 @@
         ["clean", "/commands/clean"],
         ["exec", "/commands/exec"],
         ["list", "/commands/list"],
-        ["publish", "/commands/publish"],
+        ["publishViaGit", "/commands/publishViaGit"],
         ["run", "/commands/run"],
         ["version", "/commands/version"]
       ]

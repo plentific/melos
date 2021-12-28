@@ -29,6 +29,7 @@ dependencies:
   pubspec: ^2.0.1
   string_scanner: ^1.0.5
   yaml: ^3.1.0
+  git: ^2.0.0
 
 dev_dependencies:
   nock: ^1.2.0

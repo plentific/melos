@@ -61,7 +61,7 @@ class MelosWorkspace {
       logger: logger,
     );
 
-    final filteredPackages = await allPackages.applyFilter(filter);
+    final filteredPackages = await allPackages.applyFilter(filter, workspaceConfig.path);
 
     return MelosWorkspace(
       name: workspaceConfig.name,

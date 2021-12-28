@@ -27,6 +27,7 @@ import 'package:path/path.dart';
 import 'package:pool/pool.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:pubspec/pubspec.dart';
+import 'package:git/git.dart';
 
 import '../version.g.dart';
 import 'common/git.dart';
@@ -189,17 +190,14 @@ class PackageFilter {
 
   Map<String, Object?> toJson() {
     return {
-      if (scope.isNotEmpty)
-        filterOptionScope: scope.map((e) => e.toString()).toList(),
-      if (ignore.isNotEmpty)
-        filterOptionIgnore: ignore.map((e) => e.toString()).toList(),
+      if (scope.isNotEmpty) filterOptionScope: scope.map((e) => e.toString()).toList(),
+      if (ignore.isNotEmpty) filterOptionIgnore: ignore.map((e) => e.toString()).toList(),
       if (dirExists.isNotEmpty) filterOptionDirExists: dirExists,
       if (fileExists.isNotEmpty) filterOptionFileExists: fileExists,
       if (dependsOn.isNotEmpty) filterOptionDependsOn: dependsOn,
       if (noDependsOn.isNotEmpty) filterOptionNoDependsOn: noDependsOn,
       if (updatedSince != null) filterOptionSince: updatedSince,
-      if (includePrivatePackages != null)
-        filterOptionPrivate: includePrivatePackages,
+      if (includePrivatePackages != null) filterOptionPrivate: includePrivatePackages,
       if (published != null) filterOptionPublished: published,
       if (nullSafe != null) filterOptionNullsafety: nullSafe,
       if (includeDependents) filterOptionIncludeDependents: true,
@@ -296,8 +294,7 @@ PackageFilter(
 
 // Not using MapView to prevent map mutation
 class PackageMap {
-  PackageMap(Map<String, Package> packages, this._logger)
-      : _map = _packagesSortedByName(packages);
+  PackageMap(Map<String, Package> packages, this._logger) : _map = _packagesSortedByName(packages);
 
   static Map<String, Package> _packagesSortedByName(
     Map<String, Package> packages,
@@ -321,8 +318,7 @@ class PackageMap {
   }) async {
     final packageMap = <String, Package>{};
 
-    final dartToolGlob =
-        createGlob('**/.dart_tool/**', currentDirectoryPath: workspacePath);
+    final dartToolGlob = createGlob('**/.dart_tool/**', currentDirectoryPath: workspacePath);
 
     final allPubspecs = await Directory(workspacePath)
         .list(recursive: true, followLinks: false)
@@ -386,7 +382,7 @@ The packages that caused the problem are:
 
   /// Detect packages in the workspace with the provided filters.
   /// This is the default packages behaviour when a workspace is loaded.
-  Future<PackageMap> applyFilter(PackageFilter? filter) async {
+  Future<PackageMap> applyFilter(PackageFilter? filter, String rootPath) async {
     if (filter == null) return this;
 
     var packageList = await values
@@ -398,7 +394,7 @@ The packages that caused the problem are:
         .applyDependsOn(filter.dependsOn)
         .applyNoDependsOn(filter.noDependsOn)
         .filterNullSafe(nullSafe: filter.nullSafe)
-        .filterPublishedPackages(published: filter.published)
+        .filterPublishedPackages(published: filter.published, rootPath: rootPath)
         .then((packages) => packages.applySince(filter.updatedSince, _logger));
 
     packageList = packageList.applyIncludeDependentsOrDependencies(
@@ -445,8 +441,7 @@ extension on Iterable<Package> {
       final fileExistsMatched = filePaths.any((fileExistsPath) {
         // TODO(rrousselGit): refactor the logic for applying environment variables
         // TODO(rrousselGit): should support environment variables other than PACKAGE_NAME
-        final _fileExistsPath =
-            fileExistsPath.replaceAll(r'$MELOS_PACKAGE_NAME', package.name);
+        final _fileExistsPath = fileExistsPath.replaceAll(r'$MELOS_PACKAGE_NAME', package.name);
 
         return File(join(package.path, _fileExistsPath)).existsSync();
       });
@@ -473,6 +468,7 @@ extension on Iterable<Package> {
   /// If null, does nothing.
   Future<Iterable<Package>> filterPublishedPackages({
     required bool? published,
+    required String rootPath, 
   }) async {
     if (published == null) return this;
 
@@ -482,7 +478,7 @@ extension on Iterable<Package> {
     await pool.forEach<Package, void>(this, (package) async {
       final packageVersion = package.version.toString();
 
-      final publishedVersions = await package.getPublishedVersions();
+      final publishedVersions = await package.getPublishedVersions(rootPath);
 
       final isOnPubRegistry = publishedVersions.contains(packageVersion);
 
@@ -501,8 +497,7 @@ extension on Iterable<Package> {
     final packagesFilteredWithGitCommitsSince = <Package>[];
 
     await pool.forEach<Package, void>(this, (package) {
-      return gitCommitsForPackage(package, since: since, logger: logger)
-          .then((commits) async {
+      return gitCommitsForPackage(package, since: since, logger: logger).then((commits) async {
         if (commits.isNotEmpty) {
           packagesFilteredWithGitCommitsSince.add(package);
         }
@@ -523,8 +518,7 @@ extension on Iterable<Package> {
     return where((package) {
       final version = package.version;
 
-      final isNullsafetyVersion =
-          version.isPreRelease && version.preRelease.contains('nullsafety');
+      final isNullsafetyVersion = version.isPreRelease && version.preRelease.contains('nullsafety');
 
       return nullSafe == isNullsafetyVersion;
     });
@@ -545,8 +539,7 @@ extension on Iterable<Package> {
 
     return where((package) {
       return dependsOn.every((element) {
-        return package.dependencies.contains(element) ||
-            package.devDependencies.contains(element);
+        return package.dependencies.contains(element) || package.devDependencies.contains(element);
       });
     });
   }
@@ -556,8 +549,7 @@ extension on Iterable<Package> {
 
     return where((package) {
       return noDependsOn.every((element) {
-        return !package.dependencies.contains(element) &&
-            !package.devDependencies.contains(element);
+        return !package.dependencies.contains(element) && !package.devDependencies.contains(element);
       });
     });
   }
@@ -574,10 +566,8 @@ extension on Iterable<Package> {
     return {
       for (final package in this) ...[
         package,
-        if (includeDependents)
-          ...package.allTransitiveDependentsInWorkspace.values,
-        if (includeDependencies)
-          ...package.allTransitiveDependenciesInWorkspace.values,
+        if (includeDependents) ...package.allTransitiveDependentsInWorkspace.values,
+        if (includeDependencies) ...package.allTransitiveDependenciesInWorkspace.values,
       ],
     };
   }
@@ -626,13 +616,11 @@ class Package {
 
   /// The dependencies listen in `dev_dependencies:` inside the package's `pubspec.yaml`
   /// that are part of the melos workspace
-  late final Map<String, Package> devDependenciesInWorkspace =
-      _packagesInWorkspaceForNames(devDependencies);
+  late final Map<String, Package> devDependenciesInWorkspace = _packagesInWorkspaceForNames(devDependencies);
 
   /// The dependencies listen in `dependencies:` inside the package's `pubspec.yaml`
   /// that are part of the melos workspace
-  late final Map<String, Package> dependenciesInWorkspace =
-      _packagesInWorkspaceForNames(dependencies);
+  late final Map<String, Package> dependenciesInWorkspace = _packagesInWorkspaceForNames(dependencies);
 
   /// The dependencies listen in `dependency_overrides:` inside the package's `pubspec.yaml`
   /// that are part of the melos workspace
@@ -642,25 +630,21 @@ class Package {
   /// The packages that depends on this package.
   late final Map<String, Package> dependentsInWorkspace = {
     for (final entry in _packageMap.entries)
-      if (entry.value.dependenciesInWorkspace.containsKey(name))
-        entry.key: entry.value,
+      if (entry.value.dependenciesInWorkspace.containsKey(name)) entry.key: entry.value,
   };
 
   /// The packages that depends on this package.
   late final Map<String, Package> devDependentsInWorkspace = {
     for (final entry in _packageMap.entries)
-      if (entry.value.devDependenciesInWorkspace.containsKey(name))
-        entry.key: entry.value,
+      if (entry.value.devDependenciesInWorkspace.containsKey(name)) entry.key: entry.value,
   };
 
-  late final Map<String, Package> allTransitiveDependenciesInWorkspace =
-      _transitivelyRelatedPackages(
+  late final Map<String, Package> allTransitiveDependenciesInWorkspace = _transitivelyRelatedPackages(
     root: this,
     directlyRelatedPackages: (package) => package.allDependenciesInWorkspace,
   );
 
-  late final Map<String, Package> allTransitiveDependentsInWorkspace =
-      _transitivelyRelatedPackages(
+  late final Map<String, Package> allTransitiveDependentsInWorkspace = _transitivelyRelatedPackages(
     root: this,
     directlyRelatedPackages: (package) => package.allDependentsInWorkspace,
   );
@@ -692,38 +676,20 @@ class Package {
     return publishTo.toString() == 'none';
   }
 
-  /// Queries the pub.dev registry for published versions of this package.
-  /// Primarily used for publish filters and versioning.
-  Future<List<String>> getPublishedVersions() async {
-    final url = pubUrl.replace(path: '/packages/$name.json');
-    final response = await http.get(url);
-
-    if (response.statusCode == 404) {
-      // The package was never published
-      return [];
-    } else if (response.statusCode != 200) {
-      throw Exception(
-        'Error reading pub.dev registry for package "$name" '
-        '(HTTP Status ${response.statusCode}), response: ${response.body}',
-      );
-    }
-    final versions = <String>[];
-    final versionsRaw =
-        (json.decode(response.body) as Map)['versions'] as List<Object?>;
-    for (final versionElement in versionsRaw) {
-      versions.add(versionElement! as String);
-    }
-    versions.sort((String a, String b) {
-      return Version.prioritize(Version.parse(a), Version.parse(b));
+  /// Queries repo for older version of each packages
+  Future<List<String>> getPublishedVersions(String rootPath) async {
+    final gitDir = await GitDir.fromExisting(rootPath); // TODO: check if correct path. maybe to root?
+    final tagsForPackage = await gitDir.tags().where((event) => event.tag.startsWith(name)).toList();
+    tagsForPackage.sort((Tag a, Tag b) {
+      return Version.prioritize(Version.parse(a.tag), Version.parse(b.tag));
     });
 
-    return versions.reversed.toList();
+    return tagsForPackage.reversed.map((e) => e.tag).toList();
   }
 
   /// Generates Pub/Flutter related temporary files such as .packages or pubspec.lock.
   Future<void> linkPackages(MelosWorkspace workspace) async {
-    final pluginTemporaryPath =
-        join(workspace.melosToolPath, pathRelativeToWorkspace);
+    final pluginTemporaryPath = join(workspace.melosToolPath, pathRelativeToWorkspace);
 
     await Future.forEach(generatedPubFilePaths, (String tempFilePath) async {
       final fileToCopy = File(join(pluginTemporaryPath, tempFilePath));
@@ -741,12 +707,10 @@ class Package {
           'generatorVersion': melosVersion,
         });
 
-        temporaryFileContents =
-            const JsonEncoder.withIndent('  ').convert(packageConfig);
+        temporaryFileContents = const JsonEncoder.withIndent('  ').convert(packageConfig);
       }
 
-      final regexPathSeparator =
-          '${currentPlatform.isWindows ? r'\' : ''}${currentPlatform.pathSeparator}';
+      final regexPathSeparator = '${currentPlatform.isWindows ? r'\' : ''}${currentPlatform.pathSeparator}';
       final melosToolPathRegExp = RegExp(
         '\\.dart_tool${regexPathSeparator}melos_tool$regexPathSeparator',
       );
@@ -754,8 +718,7 @@ class Package {
       // Remove the `.dart_tool\melos_tool` path from any relative file paths
       // in any of the generated files as since we mirrored the pub files to the
       // melos_tool directory for mutations they now contain this path.
-      temporaryFileContents =
-          temporaryFileContents.replaceAll(melosToolPathRegExp, '');
+      temporaryFileContents = temporaryFileContents.replaceAll(melosToolPathRegExp, '');
 
       final fileToCreate = File(join(path, tempFilePath));
       await fileToCreate.create(recursive: true);
@@ -928,8 +891,7 @@ class Package {
           platform == kLinux,
     );
 
-    return Directory('$path${currentPlatform.pathSeparator}$platform')
-        .existsSync();
+    return Directory('$path${currentPlatform.pathSeparator}$platform').existsSync();
   }
 
   bool _flutterPluginSupportsPlatform(String platform) {
@@ -985,8 +947,7 @@ Map<String, Package> _transitivelyRelatedPackages({
 }
 
 extension on PubSpec {
-  Flutter? get flutter => (unParsedYaml?['flutter'] as Map<Object?, Object?>?)
-      .let((value) => Flutter(value));
+  Flutter? get flutter => (unParsedYaml?['flutter'] as Map<Object?, Object?>?).let((value) => Flutter(value));
 }
 
 class Flutter {
@@ -994,11 +955,9 @@ class Flutter {
 
   final Map<Object?, Object?> _flutter;
 
-  Plugin? get plugin => (_flutter['plugin'] as Map<Object?, Object?>?)
-      .let((value) => Plugin(value));
+  Plugin? get plugin => (_flutter['plugin'] as Map<Object?, Object?>?).let((value) => Plugin(value));
 
-  Module? get module => (_flutter['module'] as Map<Object?, Object?>?)
-      .let((value) => Module(value));
+  Module? get module => (_flutter['module'] as Map<Object?, Object?>?).let((value) => Module(value));
 }
 
 class Module {
@@ -1018,6 +977,5 @@ class Plugin {
 
   final Map<Object?, Object?> _plugin;
 
-  Map<Object?, Object?>? get platforms =>
-      _plugin['platforms'] as Map<Object?, Object?>?;
+  Map<Object?, Object?>? get platforms => _plugin['platforms'] as Map<Object?, Object?>?;
 }
