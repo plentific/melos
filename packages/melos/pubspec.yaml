@@ -1,7 +1,11 @@
 name: melos
 description: "A tool for managing Dart & Flutter repositories with multiple packages (monorepo). Supports automated versioning via Conventional Commits. Inspired by JavaScripts Lerna package."
-version: 1.3.0
 homepage: "https://github.com/invertase/melos"
+
+version: 1.3.2
+publish_to: https://unpub.plentific.com/
+repository: https://github.com/plentific/plentific-mobile-flutter
+
 
 environment:
   sdk: ">=2.12.0 <3.0.0"
@@ -26,7 +30,10 @@ dependencies:
   platform: ^3.1.0
   pool: ^1.4.0
   pub_semver: ^2.0.0
-  pubspec: ^2.0.1
+  pubspec: 
+    git:
+      url: https://github.com/amondnet/pubspec
+      ref: master
   string_scanner: ^1.0.5
   yaml: ^3.1.0
 
